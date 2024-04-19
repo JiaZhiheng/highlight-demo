@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Document</title>
+</head>
+
+<body>
+  <div class="content">
+    <section>
+      <label>Search within text <input id="query_en" type="text" /></label>
+      <div id="webapi">highlightByWebAPI function took 0 milliseconds</div>
+      <article id="en">
+        <p>
+          When you are old<br>
+          --- William Butler Yeats<br>
+          When you are old and grey and full of sleep,<br>
+          And nodding by the fire，take down this book,<br>
+          And slowly read,and dream of the soft look<br>
+          Your eyes had once,and of their shadows deep;<br>
+          How many loved your moments of glad grace,<br>
+          And loved your beauty with love false or true,<br>
+          But one man loved the pilgrim Soul in you<br>
+          And loved the sorrows of your changing face;<br>
+          And bending down beside the glowing bars,<br>
+          Murmur,a little sadly,how Love fled<br>
+          And paced upon the mountains overhead<br>
+          And hid his face amid a crowd of stars.
+        </p>
+      </article>
+    </section>
+    <section>
+      <label>在文中搜索 <input id="query_zh" type="text" /></label>
+      <div id="dom">highlightByDOM 函数耗时 0 毫秒</div>
+      <article id="zh">
+        <p>
+          当你老了<br>
+          ——威廉·巴特勒·叶芝<br>
+          当你老了，头发花白，睡意沉沉，<br>
+          倦坐在炉边，取下这本书来，<br>
+          慢慢读着，追梦当年的眼神<br>
+          你那柔美的神采与深幽的晕影。<br>
+          多少人爱过你昙花一现的身影，<br>
+          爱过你的美貌，以虚伪或真情，<br>
+          惟独一人曾爱你那朝圣者的心，<br>
+          爱你哀戚的脸上岁月的留痕。<br>
+          在炉罩边低眉弯腰，<br>
+          忧戚沉思，喃喃而语，<br>
+          爱情是怎样逝去，又怎样步上群山，<br>
+          怎样在繁星之间藏住了脸。
+        </p>
+        <!-- ...更多段落 -->
+      </article>
+    </section>
+  </div>
+</body>
+<script>
+  // 获取文档中查询输入框和文章内容的元素
+  const query_en = document.getElementById("query_en");
+  const query_zh = document.getElementById("query_zh");
+  const article_en = document.getElementById("en");
+  const article_zh = document.getElementById("zh");
+
+  // 使用TreeWalker接口遍历article元素中的所有文本节点（忽略元素节点等其他类型的节点）
+  function getAllTextNodes(element) {
+    const treeWalker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+    const textNodes = [];
+    let currentNode = treeWalker.nextNode();
+    while (currentNode) {
+      textNodes.push(currentNode);
+      currentNode = treeWalker.nextNode();
+    }
+    return textNodes;
+  }
+
+  const allTextNodes_en = getAllTextNodes(article_en);
+  const allTextNodes_zh = getAllTextNodes(article_zh);
+
+  /**
+   * 使用 CSS Custom Highlight API 对文本进行高亮显示。
+   * @param {HTMLInputElement} searchInput - 包含要搜索的文本的输入元素。
+   * @param {NodeListOf<HTMLElement>} allTextNodes - 包含所有要搜索的文本节点的列表。
+   */
+  function highlightByWebAPI(searchInput, allTextNodes) {
+    const start = performance.now();
+
+    // 清除HighlightRegistry中的高亮显示，以移除之前的搜索结果
+    CSS.highlights.clear();
+
+    // 判断浏览器是否支持CSS Custom Highlight API，不支持则显示提示信息并退出
+    if (!CSS.highlights) {
+      article.textContent = "CSS Custom Highlight API not supported.";
+      return;
+    }
+
+    // 清除输入的查询词周围的空白字符，如果输入为空则不做搜索处理
+    const str = searchInput.value.trim().toLowerCase();
+    if (!str) {
+      const end = performance.now();
+      document.getElementById("webapi").textContent = `highlightByWebAPI 函数耗时 ${(end - start).toFixed(2)} 毫秒`;
+      return;
+    }
+
+    // 遍历所有的文本节点，查找与查询词匹配的文本
+    const ranges = allTextNodes.map((el) => {
+      return { el, text: el.textContent.toLowerCase() };
+    }).map(({ text, el }) => {
+      const indices = [];
+      let startPos = 0;
+      while (startPos < text.length) {
+        const index = text.indexOf(str, startPos);
+        if (index === -1) break;
+        indices.push(index);
+        startPos = index + str.length;
+      }
+
+      // 为文本节点中找到的每个匹配项创建一个范围（Range）对象
+      return indices.map((index) => {
+        const range = new Range();
+        range.setStart(el, index);
+        range.setEnd(el, index + str.length);
+        return range;
+      });
+    });
+
+    // 为所有匹配到的范围创建一个Highlight对象
+    const searchResultsHighlight = new Highlight(...ranges.flat());
+
+    // 在HighlightRegistry中注册这个Highlight对象
+    CSS.highlights.set("search-results", searchResultsHighlight);
+
+    const end = performance.now();
+    const timeTaken = end - start;
+    document.getElementById("webapi").textContent = `highlightByWebAPI 函数耗时 ${timeTaken.toFixed(2)} 毫秒`;
+  }
+
+  /**
+   * 通过操作 DOM 元素对文本进行高亮显示。
+   * @param {HTMLInputElement} searchInput - 包含要搜索的文本的输入元素。
+   * @param {NodeListOf<HTMLElement>} allTextNodes - 包含所有要搜索的文本节点的列表。
+   */
+  function highlightByDOM(searchInput, allTextNodes) {
+    const start = performance.now();
+    const searchStr = searchInput.value.trim().toLowerCase();
+
+    // 移除之前的高亮标记
+    removePreviousHighlights();
+
+    if (!searchStr) {
+      const end = performance.now();
+      document.getElementById("dom").textContent = `highlightByDOM 函数耗时 ${(end - start).toFixed(2)} 毫秒`;
+      return;
+    }
+
+    allTextNodes.forEach((textNode) => {
+      const nodeValue = textNode.nodeValue.toLowerCase();
+      let startIndex = 0;
+      let endIndex = 0;
+      let index = nodeValue.indexOf(searchStr, startIndex);
+
+      while (index !== -1) {
+        endIndex = index + searchStr.length;
+
+        // 创建被高亮文本的范围
+        const range = new Range();
+        range.setStart(textNode, index);
+        range.setEnd(textNode, endIndex);
+
+        // 创建 span 元素用于高亮显示
+        const highlightSpan = document.createElement('span');
+        // 加入 'highlight' 类，CSS中预定义样式
+        highlightSpan.className = 'highlight';
+        // 从原文本中剪切出范围内内容，并插入到 span 中
+        highlightSpan.appendChild(range.extractContents());
+        // 在原来的位置插入新的高亮 span 元素
+        range.insertNode(highlightSpan);
+
+        // 更新textNode指向新的兄弟节点进行下一轮搜索
+        textNode = highlightSpan.nextSibling;
+
+        // 更新下一轮搜索的起点
+        startIndex = 0;
+        index = textNode.nodeValue.toLowerCase().indexOf(searchStr, startIndex);
+      }
+    });
+
+    function removePreviousHighlights() {
+      document.querySelectorAll('.highlight').forEach((highlight) => {
+        const parent = highlight.parentNode;
+        parent.insertBefore(document.createTextNode(highlight.textContent), highlight);
+        parent.removeChild(highlight);
+        parent.normalize();
+      });
+    }
+
+    const end = performance.now();
+    const timeTaken = end - start;
+    document.getElementById("dom").textContent = `highlightByDOM 函数耗时 ${timeTaken.toFixed(2)} 毫秒`;
+  }
+
+  // 为输入查询词的输入框添加事件监听器，每当用户输入时执行封装的搜索函数
+  query_en.addEventListener("input", () => {
+    highlightByWebAPI(query_en, allTextNodes_en);
+  });
+
+  // 为输入查询词的输入框添加事件监听器，每当用户输入时执行搜索
+  query_zh.addEventListener("input", () => {
+    highlightByDOM(query_zh, allTextNodes_zh);
+  });
+</script>
+<style>
+  /* 为所有匹配到的查询词设置高亮显示样式 */
+  ::highlight(search-results) {
+    background-color: #f06;
+    /* 背景颜色 */
+    color: white;
+    /* 文字颜色 */
+  }
+
+  .highlight {
+    background-color: orange;
+    color: white;
+  }
+
+  body {
+    font-family: 'Georgia', serif;
+    line-height: 1.6;
+    margin: 0;
+    padding: 20px;
+    background-color: #f8f8f8;
+  }
+
+  .content {
+    margin: 0 auto;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 64px;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  }
+
+  article {}
+
+  p {
+    font-size: 20px;
+    font-style: italic;
+    margin-bottom: 20px;
+    text-align: center;
+    position: relative;
+  }
+
+  p:before,
+  p:after {
+    content: '';
+    position: absolute;
+    font-size: 60px;
+    color: #ccc;
+  }
+
+  p:before {
+    top: 0;
+    left: -10px;
+  }
+
+  p:after {
+    bottom: 0;
+    right: -10px;
+  }
+
+  p.author {
+    font-size: 16px;
+    font-style: normal;
+    text-align: right;
+    margin-top: 20px;
+  }
+
+  h1 {
+    text-align: center;
+    color: #333;
+  }
+</style>
+
+</html>
